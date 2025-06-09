@@ -34,35 +34,44 @@ export async function getSystemInfo() {
     }
 }
 
-export function runScript(
-    executable: string,
-    args: string[],
-    stdin: string
-): Promise<string> {
+export function runScript(executable: string, args: string[], stdin: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        console.log(`Running script: ${executable} ${args.join(' ')}`)
+        console.log(`Running script: ${executable} ${args.join(' ')}`);
 
-        const process = spawn(executable, args)
+        const isPs1 = executable.toLowerCase().endsWith('.ps1');
+        const isSh = executable.toLowerCase().endsWith('.sh');
+        const isWindows = process.platform === 'win32';
 
-        let output = '',
-            errorOutput = ''
+        let cmd = executable;
+        let spawnArgs = args;
 
-        process.stdin.write(stdin)
-        process.stdin.end()
+        if (isPs1 && isWindows) {
+            cmd = 'powershell.exe';
+            spawnArgs = ['-ExecutionPolicy', 'Bypass', '-File', executable, ...args];
+        } else if (isSh && isWindows) {
+            cmd = 'C:\\Program Files\\Git\\bin\\bash.exe'; // Adjust path if needed
+            spawnArgs = [executable, ...args];
+        }
 
-        process.stdout.on('data', (data) => (output += data.toString()))
-        process.stderr.on('data', (data) => (errorOutput += data.toString()))
+        const processHandle = spawn(cmd, spawnArgs);
+        let output = '', errorOutput = '';
 
-        process.on('close', (code) => {
+        if (stdin) {
+            processHandle.stdin.write(stdin);
+            processHandle.stdin.end();
+        }
+
+        processHandle.stdout.on('data', (data) => output += data.toString());
+        processHandle.stderr.on('data', (data) => errorOutput += data.toString());
+
+        processHandle.on('close', (code) => {
             code === 0
                 ? resolve(output)
-                : reject(`Error executing script: ${errorOutput}`)
-        })
+                : reject(`Error executing script: ${errorOutput}`);
+        });
 
-        process.on('error', (err) =>
-            reject(`Failed to start process: ${err.message}`)
-        )
-    })
+        processHandle.on('error', (err) => reject(`Failed to start process: ${err.message}`));
+    });
 }
 
 export async function getInstalledFontFamilies(): Promise<string[]> {
